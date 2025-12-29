@@ -1,36 +1,62 @@
 from schema import UserAuth, UserInfo, UserSignup
 from sqlmodel import SQLModel, create_engine, Session, select
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, status
 from services.hashing import hash_password, verify_password
+from middleware.error_handler import DatabaseErrorMiddleware
+from services.database import create_db_tables, check_database_connection, get_session
+import logging
+from fastapi.responses import JSONResponse
 
-POSTGRES_CONNECTION_STRING = "postgresql+psycopg2://postgres:Sheam000@localhost:5432/auth"
-engine = create_engine(POSTGRES_CONNECTION_STRING)
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-# database access
-def create_db():
-    SQLModel.metadata.create_all(engine)
+# add middleware
+app.add_middleware(DatabaseErrorMiddleware)
 
-def get_session():
-    with Session(engine) as session:
-        yield session
-
-# endpoints, and on events
 @app.on_event('startup')
 def on_start():
-    create_db()
+    logger.info("Starting up...")
+
+    if create_db_tables():
+        logger.info('Database tables are ready')
+    else:
+        logger.warning("Database tables could not be created. Server will start anyway.")
+        logger.warning("Database operations will fail until connection is restored.")
+
 
 @app.get('/')
-def health():
+def home():
     return {
         'version':'1.0',
         'message':'Welcome to the Authentication'
     }
 
+@app.get('/health/db')
+def health_db():
+    """Check database connectivity"""
+    is_connected = check_database_connection()
+    
+    if is_connected:
+        return {
+            'status': 'healthy',
+            'database': 'connected'
+        }
+    else:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                'status': 'unhealthy',
+                'database': 'disconnected'
+            }
+        )
+
+
 @app.post('/signup/', response_model=dict)
-def signup(user:UserSignup, session: Session=Depends(get_session)):
-    existing_user = session.exec(select(UserAuth).where(UserAuth.email==user.email)).first()
+def signup(user: UserSignup, session: Session = Depends(get_session)):
+    existing_user = session.exec(select(UserAuth).where(UserAuth.email == user.email)).first()
     if existing_user:
         raise HTTPException(status_code=409, detail="This email already holds an account!")
     
@@ -53,15 +79,14 @@ def signup(user:UserSignup, session: Session=Depends(get_session)):
     }
 
 @app.post('/login/', response_model=dict)
-def login(user: UserAuth, session: Session=Depends(get_session)):
-    existing_user = session.exec(select(UserAuth).where(UserAuth.email==user.email)).first()
+def login(user: UserAuth, session: Session = Depends(get_session)):
+    existing_user = session.exec(select(UserAuth).where(UserAuth.email == user.email)).first()
     if not existing_user:
         raise HTTPException(status_code=401, detail="Invalid Email!")
 
     if not verify_password(user.hashed, existing_user.hashed):
         raise HTTPException(status_code=401, detail="Invalid password!")
     
-    return {
-        'status_code':200,
-        'message':'Login successful'
-    }
+    return JSONResponse(status_code=200, content={
+        'message': 'Successfully logged in!'
+    })
