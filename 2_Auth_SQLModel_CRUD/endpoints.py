@@ -29,42 +29,37 @@ def health():
     }
 
 @app.post('/signup/', response_model=dict)
-def sign_up(user: UserSignup, session: Session = Depends(get_session)):
-    # Check for existing user in UserAuth
-    existing_user = session.exec(select(UserAuth).where(UserAuth.email == user.email)).first()    
+def signup(user:UserSignup, session: Session=Depends(get_session)):
+    existing_user = session.exec(select(UserAuth).where(UserAuth.email==user.email)).first()
     if existing_user:
-        raise HTTPException(status_code=409, detail="The email is already in use!")
+        raise HTTPException(status_code=409, detail="This email already holds an account!")
     
-    # Create Authentication Entry
-    hashed_pw = hash_password(user.password)
-    user_auth = UserAuth(email=user.email, hashed_password=hashed_pw)
-    
-    # Create Info Entry linked to Auth
+    hashed_password = hash_password(user.password)
+    user_auth = UserAuth(email=user.email, hashed=hashed_password)
+
     user_info = UserInfo(
-        full_name=user.full_name, 
+        full_name=user.full_name,
         age=user.age, 
-        gender=user.gender, 
+        gender=user.gender,
         auth=user_auth
     )
-    
-    session.add(user_auth)
+
     session.add(user_info)
     session.commit()
-    
+
     return {
-        'status_code':201,
-        'message':'User created successfully'
+        'status_code': 201,
+        'message': 'Signed up successfully!'
     }
 
-
 @app.post('/login/', response_model=dict)
-def login(user: UserAuth, session: Session = Depends(get_session)):
-    existing_user = session.exec(select(UserAuth).where(UserAuth.email == user.email)).first()
+def login(user: UserAuth, session: Session=Depends(get_session)):
+    existing_user = session.exec(select(UserAuth).where(UserAuth.email==user.email)).first()
     if not existing_user:
-        raise HTTPException(status_code=401, detail="Invalid Email")
-    
-    if not verify_password(user.hashed_password, existing_user.hashed_password):
-        raise HTTPException(status_code=401, detail="Invalid Password")
+        raise HTTPException(status_code=401, detail="Invalid Email!")
+
+    if not verify_password(user.hashed, existing_user.hashed):
+        raise HTTPException(status_code=401, detail="Invalid password!")
     
     return {
         'status_code':200,
