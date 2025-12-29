@@ -1,6 +1,9 @@
 import uuid
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional
+from pydantic import BaseModel
+
+
 
 class UserAuth(SQLModel, table=True):
     user_id: Optional[uuid.UUID] = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -26,3 +29,16 @@ class UserSignup(SQLModel):
     full_name: str
     age: int = None
     gender: str = None
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+
+class TokenData(BaseModel):
+    email: Optional[str] = None
+    user_id: Optional[str] = None
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str

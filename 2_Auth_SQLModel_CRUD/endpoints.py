@@ -1,4 +1,4 @@
-from schema import UserAuth, UserInfo, UserSignup
+from schema import UserAuth, UserInfo, UserSignup, TokenData, TokenResponse, RefreshTokenRequest
 from sqlmodel import SQLModel, create_engine, Session, select
 from fastapi import FastAPI, Depends, HTTPException, status
 from services.hashing import hash_password, verify_password
@@ -6,6 +6,8 @@ from middleware.error_handler import DatabaseErrorMiddleware
 from services.database import create_db_tables, check_database_connection, get_session
 import logging
 from fastapi.responses import JSONResponse
+from services.jwt_handler import create_access_token, create_refresh_token, verify_token
+from middleware.auth_middleware import get_current_user
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -73,12 +75,14 @@ def signup(user: UserSignup, session: Session = Depends(get_session)):
     session.add(user_info)
     session.commit()
 
-    return {
-        'status_code': 201,
+    return JSONResponse(
+        status_code=201, content={
         'message': 'Signed up successfully!'
-    }
+        }
+    )
 
-@app.post('/login/', response_model=dict)
+
+@app.post('/login/', response_model=TokenResponse)
 def login(user: UserAuth, session: Session = Depends(get_session)):
     existing_user = session.exec(select(UserAuth).where(UserAuth.email == user.email)).first()
     if not existing_user:
@@ -87,6 +91,61 @@ def login(user: UserAuth, session: Session = Depends(get_session)):
     if not verify_password(user.hashed, existing_user.hashed):
         raise HTTPException(status_code=401, detail="Invalid password!")
     
-    return JSONResponse(status_code=200, content={
-        'message': 'Successfully logged in!'
+    # create tokens
+    access_token = create_access_token(data={
+        'sub': existing_user.email
     })
+    refresh_token = create_refresh_token(data={
+        'sub': existing_user.email
+    })
+
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer"
+    )
+
+# Refresh token endpoint
+@app.post('/refresh/', response_model=TokenResponse)
+def refresh_token(request: RefreshTokenRequest, session: Session = Depends(get_session)):
+    """Get new access token using refresh token"""
+    payload = verify_token(request.refresh_token, token_type="refresh")
+    
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token"
+        )
+    
+    email = payload.get("sub")
+    
+    # Verify user still exists
+    user = session.exec(select(UserAuth).where(UserAuth.email == email)).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found"
+        )
+    
+    # Create new tokens
+    new_access_token = create_access_token(data={"sub": email})
+    new_refresh_token = create_refresh_token(data={"sub": email})
+    
+    return TokenResponse(
+        access_token=new_access_token,
+        refresh_token=new_refresh_token,
+        token_type="bearer"
+    )
+
+
+@app.get('/me/', response_model=dict)
+def get_my_profile(current_user: UserAuth = Depends(get_current_user)):
+    """
+    Protected route - requires valid JWT token
+    Returns current user's information
+    """
+    return {
+        'user_id': str(current_user.user_id),
+        'email': current_user.email,
+        'message': 'This is your protected profile!'
+    }
