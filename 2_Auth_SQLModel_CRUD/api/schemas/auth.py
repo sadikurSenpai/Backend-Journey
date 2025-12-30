@@ -1,13 +1,11 @@
 import uuid
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional
-from pydantic import BaseModel
-
-
+from pydantic import BaseModel, EmailStr, Field as PydanticField
 
 class UserAuth(SQLModel, table=True):
     user_id: Optional[uuid.UUID] = Field(default_factory=uuid.uuid4, primary_key=True)
-    email: str = Field(unique=True, index=True)
+    email: EmailStr = Field(unique=True, index=True)
     hashed: str
 
     info: Optional['UserInfo'] = Relationship(back_populates='auth')
@@ -24,12 +22,11 @@ class UserInfo(SQLModel, table=True):
     auth: Optional[UserAuth] = Relationship(back_populates="info")
 
 class UserSignup(SQLModel):
-    email: str
-    password: str
+    email: EmailStr
+    password: str = PydanticField(..., min_length=6)
     full_name: str
-    age: int = None
-    gender: str = None
-
+    age: Optional[int] = None
+    gender: Optional[str] = None
 
 class TokenResponse(BaseModel):
     access_token: str

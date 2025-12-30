@@ -26,13 +26,19 @@ class DatabaseErrorMiddleware(BaseHTTPMiddleware):
             )
         
         except IntegrityError as e:
-            logger.error(f"Database integrity error: {e}")
+            error_msg = str(e.orig)
+            logger.error(f"Database integrity error: {error_msg}")
+            
+            message = "A data conflict occurred."
+            if "already exists" in error_msg or "duplicate key" in error_msg.lower():
+                message = "The provided resource (likely email) already exists."
+
             return JSONResponse(
                 status_code=status.HTTP_409_CONFLICT,
                 content={
                     "error": "Conflict",
-                    "message": "The request could not be completed due to a conflict with the current state of the resource.",
-                    "detail": "The request could not be completed due to a conflict with the current state of the resource."
+                    "message": message,
+                    "detail": error_msg if "already exists" in error_msg else "Database integrity constraint violation"
                 }
             )
         except DatabaseError as e:

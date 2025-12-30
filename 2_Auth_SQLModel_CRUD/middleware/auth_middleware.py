@@ -2,7 +2,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from services.jwt_handler import verify_token
 from services.database import get_session
-from schema import UserAuth
+from api.schemas.auth import UserAuth
 from sqlmodel import Session, select
 import logging
 
@@ -29,8 +29,9 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # Extract user email from token
-    email: str = payload.get("sub")
+    # Extract user info from token
+    email: str = payload.get("email")
+    user_id: str = payload.get("sub")
     if email is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -47,7 +48,10 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    return user
+    return {
+        'email': email,
+        'user_id': user_id
+    }
 
 # Optional: Create a dependency for refresh token validation
 def verify_refresh_token(
